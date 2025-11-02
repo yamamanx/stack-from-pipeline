@@ -64,6 +64,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Properties:
       GroupDescription: Security group for Application Load Balancer
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -76,6 +77,7 @@ Resources:
     DependsOn: ALBSecurityGroup
     Properties:
       GroupDescription: Security group for web server
+      VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 80
@@ -88,8 +90,6 @@ Resources:
       LaunchTemplateData:
         ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
         InstanceType: t3.micro
-        SecurityGroupIds:
-          - !GetAtt WebServerSecurityGroup.GroupId
         NetworkInterfaces:
           - DeviceIndex: 0
             AssociatePublicIpAddress: true
