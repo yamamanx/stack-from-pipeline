@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Simple EC2 instance with NGINX using cfn-init, cfn-signal, and cfn-hup
+
+Resources:
+  # Security Group
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for web server
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateData:
+        ImageId: '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64}}'
+        InstanceType: t3.micro
+        SecurityGroupIds:
+          - !GetAtt WebServerSecurityGroup.GroupId
+        IamInstanceProfile:
+          Arn: arn:aws:iam::570019109389:instance-profile/yamamanxRole
+        UserData: !Base64
+          Fn::Sub: |
+            #!/bin/bash -xe
+            exec > >(tee /var/log/user-data.log|logger -t user-data -s 2>/dev/console) 2>&1
+
+            dnf update -y
+            dnf install -y aws-cfn-bootstrap
+
+            # Run cfn-init
+            /opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+            CFN_INIT_EXIT_CODE=$?
+
+            # Signal success or failure
+            /opt/aws/bin/cfn-signal -e $CFN_INIT_EXIT_CODE --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+
+  AutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT15M
+        Count: 2
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 2
+      DesiredCapacity: 2
+      AvailabilityZones:
+        - !Select
+          - 0
+          - !GetAZs ''
+        - !Select
+          - 1
+          - !GetAZs ''
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+          default:
+            - install_nginx
+            - configure_nginx
+            - start_nginx
+            - setup_cfn_hup
+        install_nginx:
+          commands:
+            01_install_nginx:
+              command: dnf install -y nginx
+        start_nginx:
+          services:
+            systemd:
+              nginx:
+                enabled: true
+                ensureRunning: true
+        configure_nginx:
+          files:
+            /usr/share/nginx/html/index.html:
+              content: |
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Update</title>
+                </head>
+                <body>
+                    <h1>Update!!</h1>
+                </body>
+                </html>
+              mode: '000644'
+              owner: root
+              group: root
+        setup_cfn_hup:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+                interval=1
+              mode: '000400'
+              owner: root
+              group: root
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resources.AutoScalingGroup.Metadata.AWS::CloudFormation::Init
+                action=/opt/aws/bin/cfn-init -v --stack ${AWS::StackName} --resource AutoScalingGroup --region ${AWS::Region}
+                runas=root
+              mode: '000400'
+              owner: root
+              group: root
+          services:
+            systemd:
+              cfn-hup:
+                enabled: true
+                ensureRunning: true
+                files:
+                  - /etc/cfn/cfn-hup.conf
+                  - /etc/cfn/hooks.d/cfn-auto-reloader.conf
+
+Outputs:
+  AutoScalingGroupName:
+    Description: Name of the Auto Scaling Group
+    Value: !Ref AutoScalingGroup

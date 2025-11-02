@@ -1,0 +1,19 @@
+# AWS CloudFormation
+*.zip
+packaged-template.yaml
+packaged-template.yml
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
