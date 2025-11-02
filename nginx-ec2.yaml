@@ -73,6 +73,7 @@ Resources:
   # Security Group for EC2 instances
   WebServerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
+    DependsOn: ALBSecurityGroup
     Properties:
       GroupDescription: Security group for web server
       SecurityGroupIngress:
